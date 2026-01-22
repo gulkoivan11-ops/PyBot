@@ -3,6 +3,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import random
 import requests
 import os
+from flask import Flask, request
+
 token = os.getenv('TELEGRAM_TOKEN')
 bot = telebot.TeleBot(token)
 lastjoke = ''
@@ -30,7 +32,6 @@ jokes = [
     'Зустрічаються два програмісти:\n— Ну як, ти вже закрив той баг?\n— Ні, ми з ним ще не домовилися.'
 ]
 
-
 def get_exchange_rates():
     usd = 43.0
     eur = 50.5
@@ -39,112 +40,121 @@ def get_exchange_rates():
         data = response.json()
         for item in data:
             if item.get('currencyCodeA') == 840 and item.get('currencyCodeB') == 980:
-                buy = float(item.get('rateBuy'))
-                sell = float(item.get('rateSell'))
-                usd = round((buy + sell)/2, 2)
+                usd = round((float(item['rateBuy']) + float(item['rateSell'])) / 2, 2)
             elif item.get('currencyCodeA') == 978 and item.get('currencyCodeB') == 980:
-                buy = float(item.get('rateBuy'))
-                sell = float(item.get('rateSell'))
-                eur = round((buy + sell)/2, 2)
-    except Exception as e:
-        print(f"Помилка отримання курсів: {e}")
+                eur = round((float(item['rateBuy']) + float(item['rateSell'])) / 2, 2)
+    except Exception:
+        pass
     return usd, eur
+
 usdrate, eurrate = get_exchange_rates()
-print(f"Курс завантажено: USD={usdrate}, EUR={eurrate}")
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     keyboard = InlineKeyboardMarkup()
-    button1 = InlineKeyboardButton("Інформація", callback_data='1')
-    button2 = InlineKeyboardButton("Почати", callback_data='2')
-    keyboard.add(button1, button2)
+    keyboard.add(
+        InlineKeyboardButton("Інформація", callback_data='1'),
+        InlineKeyboardButton("Почати", callback_data='2')
+    )
     bot.send_message(message.chat.id, "Привіт! Обери дію:", reply_markup=keyboard)
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_buttons(call):
     bot.answer_callback_query(call.id)
+
     if call.data == "1":
         bot.send_message(call.message.chat.id, "Я - бот, що допомагає в житті та вміє жартувати!")
+
     elif call.data == "2":
-        keyboard1 = InlineKeyboardMarkup()
-        but1 = InlineKeyboardButton("Роскажи жарт", callback_data='3')
-        but2 = InlineKeyboardButton("Пограти в камінь-ножиці-бумага", callback_data='4')
-        but3 = InlineKeyboardButton("Конвертор валют", callback_data='5')
-        keyboard1.add(but1)
-        keyboard1.add(but2)
-        keyboard1.add(but3)
-        bot.send_message(call.message.chat.id, "Давай почнемо! Що саме тебе цікавить?", reply_markup=keyboard1)
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(
+            InlineKeyboardButton("Роскажи жарт", callback_data='3'),
+            InlineKeyboardButton("Пограти в камінь-ножиці-бумага", callback_data='4'),
+            InlineKeyboardButton("Конвертор валют", callback_data='5')
+        )
+        bot.send_message(call.message.chat.id, "Давай почнемо! Що саме тебе цікавить?", reply_markup=keyboard)
+
     elif call.data == "3":
         global lastjoke
-        while True:
-            joke = random.choice(jokes)
-            if joke == lastjoke:
-                continue
-            else:
-                bot.send_message(call.message.chat.id, text=joke)
-                lastjoke = joke
-                break
+        joke = random.choice([j for j in jokes if j != lastjoke])
+        lastjoke = joke
+        bot.send_message(call.message.chat.id, joke)
+
     elif call.data == "4":
         game = InlineKeyboardMarkup()
-        gamebut1 = InlineKeyboardButton("Камінь", callback_data='rock')
-        gamebut2 = InlineKeyboardButton("Ножиці", callback_data='scissors')
-        gamebut3 = InlineKeyboardButton("Папір", callback_data='paper')
-        game.add(gamebut1, gamebut2, gamebut3)
+        game.add(
+            InlineKeyboardButton("Камінь", callback_data='rock'),
+            InlineKeyboardButton("Ножиці", callback_data='scissors'),
+            InlineKeyboardButton("Папір", callback_data='paper')
+        )
         bot.send_message(call.message.chat.id, "Вибери свій хід:", reply_markup=game)
+
     elif call.data in ['rock', 'scissors', 'paper']:
-        user_choice = call.data
         bot_choice = random.choice(['rock', 'scissors', 'paper'])
-        if user_choice == bot_choice:
-            result_text = "Нічия!"
-        elif (user_choice == 'rock' and bot_choice == 'scissors') or \
-                (user_choice == 'scissors' and bot_choice == 'paper') or \
-                (user_choice == 'paper' and bot_choice == 'rock'):
-            result_text = "Ти виграв!"
+        if call.data == bot_choice:
+            result = "Нічия!"
+        elif (call.data == 'rock' and bot_choice == 'scissors') or \
+             (call.data == 'scissors' and bot_choice == 'paper') or \
+             (call.data == 'paper' and bot_choice == 'rock'):
+            result = "Ти виграв!"
         else:
-            result_text = "Бот виграв!"
+            result = "Бот виграв!"
         again = InlineKeyboardMarkup()
-        againyes = InlineKeyboardButton("Так!", callback_data='4')
-        againno = InlineKeyboardButton("Ні", callback_data='no')
-        again.add(againyes, againno)
-        bot.send_message(call.message.chat.id, result_text + "\nХочеш зіграти ще раз?", reply_markup=again)
+        again.add(
+            InlineKeyboardButton("Так!", callback_data='4'),
+            InlineKeyboardButton("Ні", callback_data='no')
+        )
+        bot.send_message(call.message.chat.id, result + "\nХочеш зіграти ще раз?", reply_markup=again)
 
     elif call.data == "no":
         bot.send_message(call.message.chat.id, "Ок, повертайся, коли захочеш!")
 
-    elif call.data == '5':
+    elif call.data == "5":
         exchange = InlineKeyboardMarkup()
-        usduan = InlineKeyboardButton("USD → UAH", callback_data='usduan')
-        euruan = InlineKeyboardButton("EUR → UAH", callback_data='euruan')
-        uanusd = InlineKeyboardButton("UAH → USD", callback_data='uanusd')
-        uaneur = InlineKeyboardButton("UAH → EUR", callback_data='uaneur')
-        exchange.add(usduan, euruan)
-        exchange.add(uanusd, uaneur)
+        exchange.add(
+            InlineKeyboardButton("USD → UAH", callback_data='usduan'),
+            InlineKeyboardButton("EUR → UAH", callback_data='euruan'),
+            InlineKeyboardButton("UAH → USD", callback_data='uanusd'),
+            InlineKeyboardButton("UAH → EUR", callback_data='uaneur')
+        )
         bot.send_message(call.message.chat.id, "Вибери напрямок обміну:", reply_markup=exchange)
 
     elif call.data in ['usduan', 'euruan', 'uanusd', 'uaneur']:
         msg = bot.send_message(call.message.chat.id, "Введіть суму для конвертації (тільки число):")
         bot.register_next_step_handler(msg, process_conversion, call.data)
-    else:
-        bot.send_message(call.message.chat.id, "Невідома команда")
 
 def process_conversion(message, conversion_type):
     try:
         amount = float(message.text)
-        result = 0
         if conversion_type == 'usduan':
             result = amount * usdrate
-            currency_symbol = "UAH"
+            currency = "UAH"
         elif conversion_type == 'euruan':
             result = amount * eurrate
-            currency_symbol = "UAH"
+            currency = "UAH"
         elif conversion_type == 'uanusd':
             result = amount / usdrate
-            currency_symbol = "USD"
-        elif conversion_type == 'uaneur':
+            currency = "USD"
+        else:
             result = amount / eurrate
-            currency_symbol = "EUR"
-        result = round(result, 2)
-        bot.send_message(message.chat.id, f"Результат: {result} {currency_symbol}")
-
+            currency = "EUR"
+        bot.send_message(message.chat.id, f"Результат: {round(result, 2)} {currency}")
     except ValueError:
-        bot.send_message(message.chat.id,"Помилка! Потрібно ввести число. Спробуй ще раз, натиснувши кнопку.")
+        bot.send_message(message.chat.id, "Помилка! Потрібно ввести число.")
 
-bot.infinity_polling()
+app = Flask(__name__)
+
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "ok", 200
+
+@app.route("/")
+def health():
+    return "ok"
+
+if __name__ == "__main__":
+    bot.remove_webhook()
+    bot.set_webhook(os.environ["RENDER_EXTERNAL_URL"] + "/telegram")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
